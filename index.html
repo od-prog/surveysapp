@@ -1,115 +1,614 @@
-<script>
-  // ── STORAGE KEYS ──
-  const BAL_KEY = 'sb_v1';
-  const DONE_KEY = 'sd_v1';
-  const TIME_KEY = 'st_v1';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Available Surveys</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  const SECRET = 'x9k!'; // simple salt
-
-  // ── HELPERS ──
-  function encrypt(data) {
-    return btoa(SECRET + JSON.stringify(data));
-  }
-
-  function decrypt(data) {
-    try {
-      const decoded = atob(data);
-      return JSON.parse(decoded.replace(SECRET, ''));
-    } catch {
-      return null;
+    :root {
+      --primary: #5b4cff;
+      --primary-dark: #4336e0;
+      --text: #1c1c2e;
+      --text-muted: #8a8a9a;
+      --bg: #f0f1f7;
+      --white: #ffffff;
+      --border: #e4e4f0;
+      --green: #22c55e;
+      --danger: #ef4444;
+      --bottom-nav-h: 68px;
     }
-  }
 
-  // ── STATE LOAD ──
-  let balance = decrypt(localStorage.getItem(BAL_KEY)) || 0;
-  let completedIds = decrypt(localStorage.getItem(DONE_KEY)) || [];
-  let lastReset = parseInt(localStorage.getItem(TIME_KEY)) || Date.now();
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      max-width: 480px;
+      margin: 0 auto;
+      overflow-x: hidden;
+    }
 
+    /* ── NOTIFICATION POPUP ── */
+    .notif-popup {
+      position: fixed;
+      top: 72px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-8px);
+      width: calc(100% - 32px);
+      max-width: 440px;
+      background: #e8f5e9;
+      border-radius: 18px;
+      padding: 16px 16px 16px 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.15);
+      z-index: 400;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .3s, transform .3s;
+    }
+    .notif-popup.show { opacity: 1; pointer-events: all; transform: translateX(-50%) translateY(0); }
+
+    .notif-icon {
+      width: 46px; height: 46px; flex-shrink: 0;
+      background: var(--primary);
+      border-radius: 13px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .notif-icon svg { width: 22px; height: 22px; stroke: #fff; }
+
+    .notif-body { flex: 1; min-width: 0; }
+    .notif-name { font-size: 0.92rem; font-weight: 700; color: var(--primary); margin-bottom: 3px; }
+    .notif-msg { font-size: 0.85rem; color: #2a2a3a; line-height: 1.45; }
+    .notif-time { font-size: 0.74rem; color: var(--text-muted); margin-top: 5px; }
+
+    .notif-close {
+      background: none; border: none; cursor: pointer;
+      color: var(--text-muted); font-size: 1.3rem; line-height: 1;
+      padding: 0; flex-shrink: 0; align-self: flex-start;
+    }
+
+    /* ── TOP BAR ── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 20px 12px;
+      background: var(--bg);
+      position: sticky; top: 0; z-index: 50;
+    }
+
+    .topbar h1 { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.3px; }
+    .topbar p { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+
+    .topbar-actions { display: flex; gap: 8px; align-items: center; }
+
+    .icon-btn {
+      width: 40px; height: 40px; border-radius: 50%;
+      border: none; background: var(--white);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      position: relative; color: var(--text); transition: transform .15s;
+    }
+    .icon-btn:active { transform: scale(.92); }
+
+    .notif-dot {
+      position: absolute; top: 7px; right: 7px;
+      width: 8px; height: 8px;
+      background: var(--danger); border-radius: 50%;
+      border: 1.5px solid var(--bg);
+    }
+
+    /* ── EARNINGS CARD ── */
+    .earnings-card {
+      margin: 4px 16px 20px;
+      border-radius: 22px;
+      background: linear-gradient(135deg, #6c47ff 0%, #9b3fba 55%, #e86b2a 100%);
+      padding: 28px 26px 26px;
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+    }
+    .earnings-card::before {
+      content: '';
+      position: absolute; top: -50px; right: -50px;
+      width: 170px; height: 170px;
+      background: rgba(255,255,255,.07); border-radius: 50%;
+    }
+    .earnings-card::after {
+      content: '';
+      position: absolute; bottom: -30px; left: 10px;
+      width: 110px; height: 110px;
+      background: rgba(255,255,255,.05); border-radius: 50%;
+    }
+    .earn-label { font-size: 0.8rem; font-weight: 500; opacity: .8; margin-bottom: 6px; }
+    .earn-amount { font-size: 2.8rem; font-weight: 800; letter-spacing: -1.5px; line-height: 1.05; margin-bottom: 22px; position: relative; z-index: 1; }
+
+    .withdraw-main-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,.94);
+      color: var(--primary);
+      border: none; border-radius: 50px;
+      padding: 12px 30px;
+      font-size: 0.97rem; font-weight: 700;
+      cursor: pointer; font-family: 'Inter', sans-serif;
+      transition: transform .15s; position: relative; z-index: 1;
+    }
+    .withdraw-main-btn:active { transform: scale(.96); }
+
+    /* ── FILTER TABS ── */
+    .filter-section { padding: 0 16px 18px; }
+    .filter-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .filter-tab {
+      padding: 9px 20px; border-radius: 50px;
+      border: 1.5px solid var(--border);
+      background: var(--white);
+      font-size: 0.88rem; font-weight: 600; color: var(--text);
+      cursor: pointer; font-family: 'Inter', sans-serif; transition: all .2s;
+    }
+    .filter-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    /* ── SURVEY LIST ── */
+    .survey-list {
+      padding: 0 16px calc(var(--bottom-nav-h) + 24px);
+      display: flex; flex-direction: column; gap: 14px;
+    }
+
+    .survey-card {
+      background: var(--white);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.06);
+      transition: transform .18s;
+    }
+    .survey-card:active { transform: scale(.99); }
+
+    .card-top {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 14px;
+    }
+
+    .doc-icon {
+      width: 50px; height: 50px;
+      background: #eeecff; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .doc-icon svg { width: 26px; height: 26px; stroke: var(--primary); }
+
+    .tier-badge {
+      font-size: 0.78rem; font-weight: 700;
+      padding: 5px 14px; border-radius: 50px;
+    }
+    .tier-badge.free { background: #eeecff; color: var(--primary); }
+    .tier-badge.standard { background: #fff3e0; color: #e65100; }
+    .tier-badge.premium { background: #fef3c7; color: #d97706; }
+
+    .card-title { font-size: 1.08rem; font-weight: 700; margin-bottom: 4px; }
+    .card-qs { font-size: 0.82rem; color: var(--text-muted); font-weight: 500; margin-bottom: 10px; }
+
+    .card-reward {
+      font-size: 1.4rem; font-weight: 800; color: var(--text);
+      letter-spacing: -0.5px; margin-bottom: 14px;
+    }
+
+    /* Buttons */
+    .card-btn {
+      width: 100%; padding: 13px;
+      border: none; border-radius: 13px;
+      font-size: 0.93rem; font-weight: 700;
+      cursor: pointer; font-family: 'Inter', sans-serif;
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      transition: all .18s;
+    }
+    .btn-take { background: var(--primary); color: #fff; }
+    .btn-take:active { background: var(--primary-dark); }
+    .btn-completed { background: #d1d5db; color: #6b7280; cursor: default; }
+    .btn-locked { background: linear-gradient(90deg, #5b4cff, #9b3fba); color: #fff; }
+    .btn-locked:active { opacity: .88; }
+
+    .card-time {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 0.78rem; color: var(--text-muted); margin-top: 11px;
+    }
+    .card-time svg { width: 13px; height: 13px; stroke: var(--text-muted); }
+
+    /* ── BOTTOM NAV ── */
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 100%; max-width: 480px;
+      height: var(--bottom-nav-h);
+      background: var(--white);
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-around;
+      padding: 6px 8px 10px; z-index: 100;
+    }
+
+    .nav-item {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      text-decoration: none; color: var(--text-muted);
+      font-size: 0.68rem; font-weight: 500; flex: 1; padding: 4px 0;
+      border-radius: 10px; transition: color .2s;
+    }
+    .nav-item svg { width: 22px; height: 22px; }
+    .nav-item.active { color: var(--primary); }
+
+    /* ── MODALS (bottom sheet) ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.5);
+      display: flex; align-items: flex-end; justify-content: center;
+      z-index: 500; opacity: 0; pointer-events: none; transition: opacity .25s;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+
+    .modal-sheet {
+      background: var(--white);
+      border-radius: 24px 24px 0 0;
+      width: 100%; max-width: 480px;
+      max-height: 90vh; overflow-y: auto;
+      transform: translateY(20px);
+      transition: transform .3s cubic-bezier(.34,1.56,.64,1);
+    }
+    .modal-overlay.open .modal-sheet { transform: translateY(0); }
+
+    .modal-handle {
+      width: 40px; height: 4px; background: var(--border);
+      border-radius: 2px; margin: 12px auto 0;
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 22px 12px; border-bottom: 1px solid var(--border);
+    }
+    .modal-header h3 { font-size: 1.05rem; font-weight: 700; }
+    .modal-close {
+      background: #f0f1f7; border: none; cursor: pointer;
+      width: 30px; height: 30px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; color: var(--text-muted); font-family: 'Inter', sans-serif;
+    }
+    .modal-body { padding: 20px 22px 36px; }
+
+    /* Survey modal */
+    .sm-title { font-size: 1.12rem; font-weight: 800; margin-bottom: 6px; }
+    .sm-meta { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+    .sm-meta span { font-size: 0.8rem; color: var(--text-muted); }
+
+    .q-block { margin-bottom: 20px; }
+    .q-block .ql { font-size: 0.9rem; font-weight: 600; margin-bottom: 10px; }
+    .opt-label {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 14px; border: 1.5px solid var(--border);
+      border-radius: 12px; margin-bottom: 8px; cursor: pointer;
+      font-size: 0.85rem; transition: all .18s;
+    }
+    .opt-label:has(input:checked) { border-color: var(--primary); background: #f0eeff; }
+    .opt-label input { accent-color: var(--primary); }
+
+    .submit-btn {
+      width: 100%; padding: 14px;
+      background: var(--primary); color: #fff;
+      border: none; border-radius: 14px;
+      font-size: 1rem; font-weight: 700;
+      cursor: pointer; font-family: 'Inter', sans-serif;
+      margin-top: 10px; transition: background .2s;
+    }
+    .submit-btn:active { background: var(--primary-dark); }
+
+    /* Plan modal */
+    .plan-card {
+      border: 2px solid var(--border); border-radius: 16px;
+      padding: 18px; margin-bottom: 12px; cursor: pointer;
+      transition: border-color .2s; position: relative;
+    }
+    .plan-card.sel, .plan-card.recommended { border-color: var(--primary); }
+    .rec-badge {
+      position: absolute; top: -10px; left: 14px;
+      background: var(--primary); color: #fff;
+      font-size: 0.69rem; font-weight: 700; padding: 3px 10px; border-radius: 8px;
+    }
+    .pname { font-size: 1rem; font-weight: 700; margin-bottom: 3px; }
+    .pprice { font-size: 1.3rem; font-weight: 800; color: var(--primary); }
+    .pprice small { font-size: 0.8rem; font-weight: 400; color: var(--text-muted); }
+    .pf { display: flex; align-items: center; gap: 7px; font-size: 0.8rem; color: var(--text-muted); margin-top: 6px; }
+    .pf svg { stroke: var(--green); flex-shrink: 0; }
+    .subscribe-btn {
+      width: 100%; padding: 14px;
+      background: linear-gradient(90deg, #5b4cff, #9b3fba);
+      color: #fff; border: none; border-radius: 14px;
+      font-size: 1rem; font-weight: 700;
+      cursor: pointer; font-family: 'Inter', sans-serif; margin-top: 6px;
+    }
+
+    /* Withdraw modal */
+    .bal-box { background: #f0eeff; border-radius: 14px; padding: 15px 18px; margin-bottom: 18px; }
+    .bal-box .bl { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; }
+    .bal-box .ba { font-size: 1.5rem; font-weight: 800; color: var(--primary); }
+    .fg { margin-bottom: 14px; }
+    .fg label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 7px; }
+    .fg input {
+      width: 100%; padding: 12px 14px;
+      border: 1.5px solid var(--border); border-radius: 12px;
+      font-size: 0.9rem; font-family: 'Inter', sans-serif;
+      outline: none; transition: border-color .2s;
+    }
+    .fg input:focus { border-color: var(--primary); }
+    .fg .hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 5px; }
+    .wd-btn {
+      width: 100%; padding: 14px;
+      background: var(--primary); color: #fff;
+      border: none; border-radius: 14px;
+      font-size: 1rem; font-weight: 700;
+      cursor: pointer; font-family: 'Inter', sans-serif; margin-top: 8px;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: calc(var(--bottom-nav-h) + 14px); left: 50%;
+      transform: translateX(-50%) translateY(8px);
+      background: #1c1c2e; color: #fff;
+      padding: 11px 22px; border-radius: 50px;
+      font-size: 0.84rem; font-weight: 500;
+      z-index: 999; white-space: nowrap;
+      opacity: 0; transition: all .3s; pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<!-- NOTIFICATION POPUP -->
+<div class="notif-popup" id="notifPopup">
+  <div class="notif-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>
+    </svg>
+  </div>
+  <div class="notif-body">
+    <div class="notif-name" id="nName">Daniel K.</div>
+    <div class="notif-msg" id="nMsg">Withdrawal request of Ksh 19,500 has been disbursed!</div>
+    <div class="notif-time" id="nTime">2 mins ago</div>
+  </div>
+  <button class="notif-close" onclick="dismissNotif()">×</button>
+</div>
+
+<!-- TOP BAR -->
+<header class="topbar">
+  <div>
+    <h1>Available Surveys</h1>
+    <p>Complete surveys and earn rewards</p>
+  </div>
+  <div class="topbar-actions">
+    <button class="icon-btn" onclick="toggleNotif()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
+      </svg>
+      <span class="notif-dot" id="notifDot"></span>
+    </button>
+    <button class="icon-btn" onclick="openWithdraw()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0112 0v2"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<!-- EARNINGS CARD -->
+<div class="earnings-card">
+  <div class="earn-label">Earned so far</div>
+  <div class="earn-amount" id="mainBal">Ksh 340</div>
+  <button class="withdraw-main-btn" onclick="openWithdraw()">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2v14"/><path d="M6 10l6 6 6-6"/><path d="M3 20h18"/></svg>
+    Withdraw
+  </button>
+</div>
+
+<!-- FILTER TABS -->
+<div class="filter-section">
+  <div class="filter-tabs">
+    <button class="filter-tab active" onclick="filterBy('all',this)">All Surveys</button>
+    <button class="filter-tab" onclick="filterBy('free',this)">Free</button>
+    <button class="filter-tab" onclick="filterBy('standard',this)">Standard</button>
+    <button class="filter-tab" onclick="filterBy('premium',this)">Premium</button>
+  </div>
+</div>
+
+<!-- SURVEY LIST -->
+<div class="survey-list" id="surveyList"></div>
+
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav">
+  <a href="#" class="nav-item" onclick="navTo(this,'Dashboard')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    Dashboard
+  </a>
+  <a href="#" class="nav-item active" onclick="navTo(this,'Surveys')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="12" y2="16"/></svg>
+    Surveys
+  </a>
+  <a href="#" class="nav-item" onclick="navTo(this,'Referrals')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+    Referrals
+  </a>
+  <a href="#" class="nav-item" onclick="navTo(this,'Settings')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    Settings
+  </a>
+  <a href="#" class="nav-item" onclick="navTo(this,'Help')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    Help
+  </a>
+</nav>
+
+<!-- SURVEY MODAL -->
+<div class="modal-overlay" id="surveyModal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h3>Take Survey</h3>
+      <button class="modal-close" onclick="closeModal('surveyModal')">×</button>
+    </div>
+    <div class="modal-body" id="surveyBody"></div>
+  </div>
+</div>
+
+<!-- PLAN MODAL -->
+<div class="modal-overlay" id="planModal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h3>Choose a Subscription Plan</h3>
+      <button class="modal-close" onclick="closeModal('planModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.84rem;color:var(--text-muted);margin-bottom:18px;">Upgrade to access Standard and Premium surveys and earn significantly more.</p>
+      <div class="plan-card" onclick="selectPlan(this)">
+        <div class="pname">Standard</div>
+        <div class="pprice">Ksh 299 <small>/ month</small></div>
+        <div class="pf"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Access to standard surveys</div>
+        <div class="pf"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Higher earning potential</div>
+        <div class="pf"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Priority payouts</div>
+      </div>
+      <div class="plan-card recommended" onclick="selectPlan(this)">
+        <div class="rec-badge">Recommended</div>
+        <div class="pname">Premium</div>
+        <div class="pprice">Ksh 599 <small>/ month</small></div>
+        <div class="pf"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Access to all surveys</div>
+        <div class="pf"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Maximum earning potential</div>
+        <div class="pf"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Instant payouts</div>
+        <div class="pf"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Bonus surveys</div>
+      </div>
+      <button class="subscribe-btn" onclick="handleSubscribe()">Subscribe Now</button>
+    </div>
+  </div>
+</div>
+
+<!-- WITHDRAW MODAL -->
+<div class="modal-overlay" id="withdrawModal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h3>Withdraw Funds</h3>
+      <button class="modal-close" onclick="closeModal('withdrawModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="bal-box">
+        <div class="bl">Available Balance</div>
+        <div class="ba" id="wdBal">Ksh 340</div>
+      </div>
+      <div class="fg">
+        <label>Amount to Withdraw (Ksh)</label>
+        <input type="number" id="wdAmt" placeholder="Enter amount"/>
+        <div class="hint">Minimum withdrawal is Ksh 500</div>
+      </div>
+      <div class="fg">
+        <label>M-Pesa Number</label>
+        <input type="tel" id="wdMpesa" placeholder="e.g. 0712 345 678"/>
+      </div>
+      <button class="wd-btn" onclick="handleWithdraw()">Request Withdrawal</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── STATE ──
+  let balance = 340;
   let filter = 'all';
   let activeSurvey = null;
 
-  // ── DAILY RESET (24h) ──
-  function checkReset() {
-    const now = Date.now();
-    const ONE_DAY = 24 * 60 * 60 * 1000;
+  const notifQueue = [
+    { name:'Daniel K.', msg:'Withdrawal request of Ksh 19,500 has been disbursed!', time:'2 mins ago' },
+    { name:'Grace M.',  msg:'Survey reward of Ksh 250 has been credited to your account!', time:'5 mins ago' },
+    { name:'Brian O.',  msg:'Withdrawal request of Ksh 8,000 has been disbursed!', time:'12 mins ago' },
+    { name:'Faith W.',  msg:'You earned Ksh 170 from SurveysPlus!', time:'18 mins ago' },
+    { name:'James N.',  msg:'Withdrawal request of Ksh 5,500 has been disbursed!', time:'1 hr ago' },
+  ];
+  let nIdx = 0;
 
-    if (now - lastReset > ONE_DAY) {
-      completedIds = [];
-      saveCompleted();
-
-      lastReset = now;
-      localStorage.setItem(TIME_KEY, lastReset.toString());
-
-      showToast('🔄 New surveys available!');
-    }
+  function showNotif() {
+    const n = notifQueue[nIdx % notifQueue.length];
+    document.getElementById('nName').textContent = n.name;
+    document.getElementById('nMsg').textContent = n.msg;
+    document.getElementById('nTime').textContent = n.time;
+    document.getElementById('notifDot').style.display = 'block';
+    document.getElementById('notifPopup').classList.add('show');
+    nIdx++;
+    setTimeout(() => document.getElementById('notifPopup').classList.remove('show'), 5500);
   }
 
-  // ── SAVE STATE ──
-  function saveBalance() {
-    localStorage.setItem(BAL_KEY, encrypt(balance));
-    updateBalanceDisplay();
+  function toggleNotif() {
+    const p = document.getElementById('notifPopup');
+    p.classList.contains('show') ? p.classList.remove('show') : showNotif();
   }
 
-  function saveCompleted() {
-    localStorage.setItem(DONE_KEY, encrypt(completedIds));
+  function dismissNotif() {
+    document.getElementById('notifPopup').classList.remove('show');
   }
 
-  // ── SURVEYS (FULL LIST WITH TIERS, QUESTIONS) ──
+  setTimeout(showNotif, 1200);
+  setInterval(showNotif, 13000);
+
+  // ── SURVEYS ──
   const surveys = [
-    { id:1, tier:'free', title:'SurveysPlus', questions:3, reward:170, time:'11 mins', qs:[
-      {q:'How satisfied are you with online services?', opts:['Very satisfied','Satisfied','Neutral','Dissatisfied']},
-      {q:'How often do you use digital payments?', opts:['Daily','Weekly','Monthly','Rarely']},
-      {q:'Would you recommend our platform?', opts:['Definitely','Probably','Not sure','No']},
-    ]},
-    { id:2, tier:'free', title:'Daily Consumer Habits', questions:5, reward:80, time:'8 mins', qs:[
-      {q:'How often do you shop online?', opts:['Daily','Weekly','Monthly','Rarely']},
-      {q:'What do you mostly buy online?', opts:['Clothes','Electronics','Food','Other']},
-      {q:'Do you compare prices before buying?', opts:['Always','Sometimes','Rarely','Never']},
-      {q:'Preferred payment method?', opts:['M-Pesa','Credit card','Cash on delivery','Bank transfer']},
-      {q:'Rate your shopping experience:', opts:['Excellent','Good','Average','Poor']},
-    ]},
-    { id:3, tier:'free', title:'Social Media Trends', questions:4, reward:60, time:'5 mins', qs:[
-      {q:'Platform used most?', opts:['TikTok','Instagram','Facebook','Twitter/X']},
-      {q:'Daily hours on social media?', opts:['< 1 hr','1–2 hrs','3–4 hrs','5+ hrs']},
-      {q:'Do you follow brands online?', opts:['Yes, many','A few','Rarely','No']},
-      {q:'Do you trust online reviews?', opts:['Very much','Somewhat','Not really','Not at all']},
-    ]},
-    { id:4, tier:'standard', title:'Mobile Banking in Kenya', questions:10, reward:220, time:'14 mins', qs:[
-      {q:'Which mobile banking app do you use most?', opts:['M-Pesa','KCB Mobile','Equity App','Other']},
-      {q:'Satisfaction level?', opts:['Very satisfied','Satisfied','Neutral','Dissatisfied']},
-    ]},
-    { id:5, tier:'standard', title:'Brand Awareness Survey', questions:8, reward:180, time:'10 mins', qs:[
-      {q:'How do you discover new brands?', opts:['Social media','Friends & family','Ads','Search']},
-      {q:'Brand loyalty?', opts:['Very loyal','Somewhat loyal','Not loyal','Depends']},
-    ]},
-    { id:6, tier:'premium', title:'Healthcare Access Study', questions:18, reward:450, time:'20 mins', qs:[
-      {q:'Do you have health insurance?', opts:['NHIF','Private','Both','None']},
-      {q:'Nearest hospital distance?', opts:['< 5km','5–10km','10–20km','20km+']},
-    ]},
-    { id:7, tier:'premium', title:'Food Security & Agriculture', questions:22, reward:600, time:'25 mins', qs:[
-      {q:'Main food source?', opts:['Supermarket','Local market','Own farm','Mixed']},
-      {q:'Food insecurity in past year?', opts:['Never','Rarely','Sometimes','Often']},
-    ]},
+    { id:1, tier:'free', title:'SurveysPlus', questions:3, reward:170, time:'11 mins', completed:true,
+      qs:[
+        {q:'How satisfied are you with online services?', opts:['Very satisfied','Satisfied','Neutral','Dissatisfied']},
+        {q:'How often do you use digital payments?', opts:['Daily','Weekly','Monthly','Rarely']},
+        {q:'Would you recommend our platform?', opts:['Definitely','Probably','Not sure','No']},
+      ]},
+    { id:2, tier:'free', title:'Daily Consumer Habits', questions:5, reward:80, time:'8 mins', completed:false,
+      qs:[
+        {q:'How often do you shop online?', opts:['Daily','Weekly','Monthly','Rarely']},
+        {q:'What do you mostly buy online?', opts:['Clothes','Electronics','Food','Other']},
+        {q:'Do you compare prices before buying?', opts:['Always','Sometimes','Rarely','Never']},
+        {q:'Preferred payment method?', opts:['M-Pesa','Credit card','Cash on delivery','Bank transfer']},
+        {q:'Rate your shopping experience:', opts:['Excellent','Good','Average','Poor']},
+      ]},
+    { id:3, tier:'free', title:'Social Media Trends', questions:4, reward:60, time:'5 mins', completed:false,
+      qs:[
+        {q:'Platform used most?', opts:['TikTok','Instagram','Facebook','Twitter/X']},
+        {q:'Daily hours on social media?', opts:['< 1 hr','1–2 hrs','3–4 hrs','5+ hrs']},
+        {q:'Do you follow brands online?', opts:['Yes, many','A few','Rarely','No']},
+        {q:'Do you trust online reviews?', opts:['Very much','Somewhat','Not really','Not at all']},
+      ]},
+    { id:4, tier:'standard', title:'Mobile Banking in Kenya', questions:10, reward:220, time:'14 mins', completed:false,
+      qs:[
+        {q:'Which mobile banking app do you use most?', opts:['M-Pesa','KCB Mobile','Equity App','Other']},
+        {q:'Satisfaction level?', opts:['Very satisfied','Satisfied','Neutral','Dissatisfied']},
+      ]},
+    { id:5, tier:'standard', title:'Brand Awareness Survey', questions:8, reward:180, time:'10 mins', completed:false,
+      qs:[
+        {q:'How do you discover new brands?', opts:['Social media','Friends & family','Ads','Search']},
+        {q:'Brand loyalty?', opts:['Very loyal','Somewhat loyal','Not loyal','Depends']},
+      ]},
+    { id:6, tier:'premium', title:'Healthcare Access Study', questions:18, reward:450, time:'20 mins', completed:false,
+      qs:[
+        {q:'Do you have health insurance?', opts:['NHIF','Private','Both','None']},
+        {q:'Nearest hospital distance?', opts:['< 5km','5–10km','10–20km','20km+']},
+      ]},
+    { id:7, tier:'premium', title:'Food Security & Agriculture', questions:22, reward:600, time:'25 mins', completed:false,
+      qs:[
+        {q:'Main food source?', opts:['Supermarket','Local market','Own farm','Mixed']},
+        {q:'Food insecurity in past year?', opts:['Never','Rarely','Sometimes','Often']},
+      ]},
   ];
 
-  // ── CHECK IF SURVEY IS COMPLETED ──
-  function isCompleted(id) {
-    return completedIds.includes(id);
-  }
-
-  // ── RENDER SURVEY LIST WITH FILTERS ──
   function renderSurveys() {
     const list = document.getElementById('surveyList');
-    if (!list) return; // be safe
-
     const shown = filter === 'all' ? surveys : surveys.filter(s => s.tier === filter);
 
     list.innerHTML = shown.map(s => {
       const tLabel = s.tier[0].toUpperCase() + s.tier.slice(1);
-      const done = isCompleted(s.id);
-
       let btn;
-      if (done) {
+      if (s.completed) {
         btn = `<button class="card-btn btn-completed" disabled>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
           Completed</button>`;
@@ -146,7 +645,6 @@
     }).join('');
   }
 
-  // ── FILTER TABS ──
   function filterBy(tier, btn) {
     filter = tier;
     document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
@@ -154,16 +652,12 @@
     renderSurveys();
   }
 
-  // ── OPEN SURVEY MODAL ──
   function openSurvey(id) {
     activeSurvey = surveys.find(s => s.id === id);
-    if (!activeSurvey || isCompleted(id)) return;
+    if (!activeSurvey) return;
     if (activeSurvey.tier !== 'free') { openModal('planModal'); return; }
 
-    const body = document.getElementById('surveyBody');
-    if (!body) return;
-
-    body.innerHTML = `
+    document.getElementById('surveyBody').innerHTML = `
       <div class="sm-title">${activeSurvey.title}</div>
       <div class="sm-meta">
         <span>⏱ ${activeSurvey.time}</span>
@@ -181,23 +675,18 @@
     openModal('surveyModal');
   }
 
-  // ── SUBMIT SURVEY + EARN ──
   function submitSurvey() {
     const s = surveys.find(x => x.id === activeSurvey.id);
-    if (!s || isCompleted(s.id)) return;
-
-    completedIds.push(s.id);
-    saveCompleted();
-
-    balance += s.reward;
-    saveBalance();
-
+    if (s && !s.completed) {
+      s.completed = true;
+      balance += s.reward;
+      updateBalanceDisplay();
+    }
     closeModal('surveyModal');
     renderSurveys();
-    showToast(`🎉 Earned Ksh ${s.reward}!`);
+    showToast(`🎉 Earned Ksh ${activeSurvey.reward}! Balance: Ksh ${balance.toLocaleString()}`);
   }
 
-  // ── PLAN MODAL (upgrade) ──
   function selectPlan(el) {
     document.querySelectorAll('.plan-card').forEach(c => c.classList.remove('sel'));
     el.classList.add('sel');
@@ -210,132 +699,61 @@
     renderSurveys();
   }
 
-  // ── WITHDRAW FUNDS ──
   function openWithdraw() {
-    const el = document.getElementById('wdBal');
-    if (el) el.textContent = `Ksh ${balance.toLocaleString()}`;
+    document.getElementById('wdBal').textContent = `Ksh ${balance.toLocaleString()}`;
     openModal('withdrawModal');
   }
 
   function handleWithdraw() {
-    const amtInput = document.getElementById('wdAmt');
-    const mpesaInput = document.getElementById('wdMpesa');
-    if (!amtInput || !mpesaInput) return;
-
-    const amt = parseFloat(amtInput.value);
-    const mpesa = mpesaInput.value.trim();
-
+    const amt = parseFloat(document.getElementById('wdAmt').value);
+    const mpesa = document.getElementById('wdMpesa').value.trim();
     if (!amt || amt < 500) { showToast('⚠️ Minimum withdrawal is Ksh 500'); return; }
     if (amt > balance) { showToast('⚠️ Insufficient balance'); return; }
-    if (!mpesa) { showToast('⚠️ Enter your M‑Pesa number'); return; }
-
+    if (!mpesa) { showToast('⚠️ Enter your M-Pesa number'); return; }
     balance -= amt;
-    saveBalance();
-
-    amtInput.value = '';
-    mpesaInput.value = '';
+    updateBalanceDisplay();
+    document.getElementById('wdAmt').value = '';
+    document.getElementById('wdMpesa').value = '';
     closeModal('withdrawModal');
     showToast(`✅ Ksh ${amt.toLocaleString()} withdrawal requested!`);
   }
 
-  // ── UPDATE BALANCE DISPLAY ──
   function updateBalanceDisplay() {
-    const el1 = document.getElementById('mainBal');
-    const el2 = document.getElementById('wdBal');
-
-    if (el1) el1.textContent = `Ksh ${balance.toLocaleString()}`;
-    if (el2) el2.textContent = `Ksh ${balance.toLocaleString()}`;
+    document.getElementById('mainBal').textContent = `Ksh ${balance.toLocaleString()}`;
+    document.getElementById('wdBal').textContent = `Ksh ${balance.toLocaleString()}`;
   }
 
-  // ── MODALS ──
   function openModal(id) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.classList.add('open');
+    document.getElementById(id).classList.add('open');
     document.body.style.overflow = 'hidden';
   }
 
   function closeModal(id) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.classList.remove('open');
+    document.getElementById(id).classList.remove('open');
     document.body.style.overflow = '';
   }
 
-  // ── TOAST ──
-  function showToast(msg) {
-    const t = document.getElementById('toast');
-    if (!t) return;
-    t.textContent = msg;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 3000);
-  }
-
-  // ── NAV BAR ──
   function navTo(el, name) {
-    if (event) event.preventDefault();
+    event.preventDefault();
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
     if (name !== 'Surveys') showToast(`Navigating to ${name}…`);
   }
 
-  // ── INIT ──
-  checkReset();
-  updateBalanceDisplay();
-  renderSurveys();
-
-  // ── NOTIFICATION POPUP (optional, not tied to storage) ──
-  const notifQueue = [
-    { name:'Daniel K.', msg:'Withdrawal request of Ksh 19,500 has been disbursed!', time:'2 mins ago' },
-    { name:'Grace M.',  msg:'Survey reward of Ksh 250 has been credited to your account!', time:'5 mins ago' },
-    { name:'Brian O.',  msg:'Withdrawal request of Ksh 8,000 has been disbursed!', time:'12 mins ago' },
-    { name:'Faith W.',  msg:'You earned Ksh 170 from SurveysPlus!', time:'18 mins ago' },
-    { name:'James N.',  msg:'Withdrawal request of Ksh 5,500 has been disbursed!', time:'1 hr ago' },
-  ];
-  let nIdx = 0;
-
-  function showNotif() {
-    const n = notifQueue[nIdx % notifQueue.length];
-
-    const nameEl = document.getElementById('nName');
-    const msgEl = document.getElementById('nMsg');
-    const timeEl = document.getElementById('nTime');
-    const dotEl = document.getElementById('notifDot');
-    const popup = document.getElementById('notifPopup');
-    if (!nameEl || !msgEl || !timeEl || !dotEl || !popup) return;
-
-    nameEl.textContent = n.name;
-    msgEl.textContent = n.msg;
-    timeEl.textContent = n.time;
-    dotEl.style.display = 'block';
-    popup.classList.add('show');
-    nIdx++;
-    setTimeout(() => popup.classList.remove('show'), 5500);
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3200);
   }
 
-  function toggleNotif() {
-    const p = document.getElementById('notifPopup');
-    if (!p) return;
-    p.classList.contains('show') ? p.classList.remove('show') : showNotif();
-  }
-
-  function dismissNotif() {
-    const p = document.getElementById('notifPopup');
-    if (!p) return;
-    p.classList.remove('show');
-  }
-
-  setTimeout(showNotif, 1200);
-  setInterval(showNotif, 13000);
-
-  // ── MODAL CLICK OUTSIDE CLOSE ──
   document.querySelectorAll('.modal-overlay').forEach(o => {
     o.addEventListener('click', e => {
-      if (e.target === o) {
-        const overlay = e.target;
-        overlay.classList.remove('open');
-        document.body.style.overflow = '';
-      }
+      if (e.target === o) { o.classList.remove('open'); document.body.style.overflow = ''; }
     });
   });
+
+  renderSurveys();
 </script>
+</body>
+</html>
