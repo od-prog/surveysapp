@@ -1,0 +1,308 @@
+<script>
+  // ── STORAGE KEYS ──
+  const BAL_KEY = 'sb_v1';
+  const DONE_KEY = 'sd_v1';
+  const TIME_KEY = 'st_v1';
+
+  const SECRET = 'x9k!'; // simple salt
+
+  // ── HELPERS ──
+  function encrypt(data) {
+    return btoa(SECRET + JSON.stringify(data));
+  }
+
+  function decrypt(data) {
+    try {
+      const decoded = atob(data);
+      return JSON.parse(decoded.replace(SECRET, ''));
+    } catch {
+      return null;
+    }
+  }
+
+  // ── STATE LOAD ──
+  let balance = decrypt(localStorage.getItem(BAL_KEY)) || 0;
+  let completedIds = decrypt(localStorage.getItem(DONE_KEY)) || [];
+  let lastReset = parseInt(localStorage.getItem(TIME_KEY)) || Date.now();
+
+  let filter = 'all';
+  let activeSurvey = null;
+
+  // ── DAILY RESET (24h) ──
+  function checkReset() {
+    const now = Date.now();
+    const ONE_DAY = 24 * 60 * 60 * 1000;
+
+    if (now - lastReset > ONE_DAY) {
+      completedIds = [];
+      saveCompleted();
+
+      lastReset = now;
+      localStorage.setItem(TIME_KEY, lastReset.toString());
+
+      showToast('🔄 New surveys available!');
+    }
+  }
+
+  // ── SAVE STATE ──
+  function saveBalance() {
+    localStorage.setItem(BAL_KEY, encrypt(balance));
+    updateBalanceDisplay();
+  }
+
+  function saveCompleted() {
+    localStorage.setItem(DONE_KEY, encrypt(completedIds));
+  }
+
+  // ── SURVEYS (FULL LIST WITH TIERS, QUESTIONS) ──
+  const surveys = [
+    { id:1, tier:'free', title:'SurveysPlus', questions:3, reward:170, time:'11 mins', qs:[
+      {q:'How satisfied are you with online services?', opts:['Very satisfied','Satisfied','Neutral','Dissatisfied']},
+      {q:'How often do you use digital payments?', opts:['Daily','Weekly','Monthly','Rarely']},
+      {q:'Would you recommend our platform?', opts:['Definitely','Probably','Not sure','No']},
+    ]},
+    { id:2, tier:'free', title:'Daily Consumer Habits', questions:5, reward:80, time:'8 mins', qs:[
+      {q:'How often do you shop online?', opts:['Daily','Weekly','Monthly','Rarely']},
+      {q:'What do you mostly buy online?', opts:['Clothes','Electronics','Food','Other']},
+      {q:'Do you compare prices before buying?', opts:['Always','Sometimes','Rarely','Never']},
+      {q:'Preferred payment method?', opts:['M-Pesa','Credit card','Cash on delivery','Bank transfer']},
+      {q:'Rate your shopping experience:', opts:['Excellent','Good','Average','Poor']},
+    ]},
+    { id:3, tier:'free', title:'Social Media Trends', questions:4, reward:60, time:'5 mins', qs:[
+      {q:'Platform used most?', opts:['TikTok','Instagram','Facebook','Twitter/X']},
+      {q:'Daily hours on social media?', opts:['< 1 hr','1–2 hrs','3–4 hrs','5+ hrs']},
+      {q:'Do you follow brands online?', opts:['Yes, many','A few','Rarely','No']},
+      {q:'Do you trust online reviews?', opts:['Very much','Somewhat','Not really','Not at all']},
+    ]},
+    { id:4, tier:'standard', title:'Mobile Banking in Kenya', questions:10, reward:220, time:'14 mins', qs:[
+      {q:'Which mobile banking app do you use most?', opts:['M-Pesa','KCB Mobile','Equity App','Other']},
+      {q:'Satisfaction level?', opts:['Very satisfied','Satisfied','Neutral','Dissatisfied']},
+    ]},
+    { id:5, tier:'standard', title:'Brand Awareness Survey', questions:8, reward:180, time:'10 mins', qs:[
+      {q:'How do you discover new brands?', opts:['Social media','Friends & family','Ads','Search']},
+      {q:'Brand loyalty?', opts:['Very loyal','Somewhat loyal','Not loyal','Depends']},
+    ]},
+    { id:6, tier:'premium', title:'Healthcare Access Study', questions:18, reward:450, time:'20 mins', qs:[
+      {q:'Do you have health insurance?', opts:['NHIF','Private','Both','None']},
+      {q:'Nearest hospital distance?', opts:['< 5km','5–10km','10–20km','20km+']},
+    ]},
+    { id:7, tier:'premium', title:'Food Security & Agriculture', questions:22, reward:600, time:'25 mins', qs:[
+      {q:'Main food source?', opts:['Supermarket','Local market','Own farm','Mixed']},
+      {q:'Food insecurity in past year?', opts:['Never','Rarely','Sometimes','Often']},
+    ]},
+  ];
+
+  // ── CHECK IF SURVEY IS COMPLETED ──
+  function isCompleted(id) {
+    return completedIds.includes(id);
+  }
+
+  // ── RENDER SURVEY LIST WITH FILTERS ──
+  function renderSurveys() {
+    const list = document.getElementById('surveyList');
+    const shown = filter === 'all' ? surveys : surveys.filter(s => s.tier === filter);
+
+    list.innerHTML = shown.map(s => {
+      const tLabel = s.tier[0].toUpperCase() + s.tier.slice(1);
+      const done = isCompleted(s.id);
+
+      let btn;
+      if (done) {
+        btn = `<button class="card-btn btn-completed" disabled>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Completed</button>`;
+      } else if (s.tier !== 'free') {
+        btn = `<button class="card-btn btn-locked" onclick="openSurvey(${s.id})">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          Unlock & Take Survey</button>`;
+      } else {
+        btn = `<button class="card-btn btn-take" onclick="openSurvey(${s.id})">Take Survey</button>`;
+      }
+
+      return `<div class="survey-card">
+        <div class="card-top">
+          <div class="doc-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+          </div>
+          <span class="tier-badge ${s.tier}">${tLabel}</span>
+        </div>
+        <div class="card-title">${s.title}</div>
+        <div class="card-qs">${s.questions} questions</div>
+        <div class="card-reward">Reward Ksh ${s.reward.toLocaleString()}</div>
+        ${btn}
+        <div class="card-time">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          ${s.time}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── FILTER TABS ──
+  function filterBy(tier, btn) {
+    filter = tier;
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    renderSurveys();
+  }
+
+  // ── OPEN SURVEY MODAL ──
+  function openSurvey(id) {
+    activeSurvey = surveys.find(s => s.id === id);
+    if (!activeSurvey || isCompleted(id)) return;
+    if (activeSurvey.tier !== 'free') { openModal('planModal'); return; }
+
+    document.getElementById('surveyBody').innerHTML = `
+      <div class="sm-title">${activeSurvey.title}</div>
+      <div class="sm-meta">
+        <span>⏱ ${activeSurvey.time}</span>
+        <span>📋 ${activeSurvey.questions} questions</span>
+        <span>💰 Earn Ksh ${activeSurvey.reward}</span>
+      </div>
+      ${activeSurvey.qs.map((q,i) => `
+        <div class="q-block">
+          <div class="ql">${i+1}. ${q.q}</div>
+          ${q.opts.map(o => `<label class="opt-label"><input type="radio" name="q${i}" value="${o}"/> ${o}</label>`).join('')}
+        </div>
+      `).join('')}
+      <button class="submit-btn" onclick="submitSurvey()">Submit & Earn Ksh ${activeSurvey.reward}</button>
+    `;
+    openModal('surveyModal');
+  }
+
+  // ── SUBMIT SURVEY + EARN ──
+  function submitSurvey() {
+    const s = surveys.find(x => x.id === activeSurvey.id);
+    if (!s || isCompleted(s.id)) return;
+
+    completedIds.push(s.id);
+    saveCompleted();
+
+    balance += s.reward;
+    saveBalance();
+
+    closeModal('surveyModal');
+    renderSurveys();
+    showToast(`🎉 Earned Ksh ${s.reward}!`);
+  }
+
+  // ── PLAN MODAL (upgrade) ──
+  function selectPlan(el) {
+    document.querySelectorAll('.plan-card').forEach(c => c.classList.remove('sel'));
+    el.classList.add('sel');
+  }
+
+  function handleSubscribe() {
+    closeModal('planModal');
+    showToast('✅ Subscription activated! All surveys unlocked.');
+    surveys.filter(s => s.tier !== 'free').forEach(s => { s._origTier = s.tier; s.tier = 'free'; });
+    renderSurveys();
+  }
+
+  // ── WITHDRAW FUNDS ──
+  function openWithdraw() {
+    document.getElementById('wdBal').textContent = `Ksh ${balance.toLocaleString()}`;
+    openModal('withdrawModal');
+  }
+
+  function handleWithdraw() {
+    const amt = parseFloat(document.getElementById('wdAmt').value);
+    const mpesa = document.getElementById('wdMpesa').value.trim();
+
+    if (!amt || amt < 500) { showToast('⚠️ Minimum withdrawal is Ksh 500'); return; }
+    if (amt > balance) { showToast('⚠️ Insufficient balance'); return; }
+    if (!mpesa) { showToast('⚠️ Enter your M‑Pesa number'); return; }
+
+    balance -= amt;
+    saveBalance();
+
+    document.getElementById('wdAmt').value = '';
+    document.getElementById('wdMpesa').value = '';
+    closeModal('withdrawModal');
+    showToast(`✅ Ksh ${amt.toLocaleString()} withdrawal requested!`);
+  }
+
+  // ── UPDATE BALANCE DISPLAY ──
+  function updateBalanceDisplay() {
+    document.getElementById('mainBal').textContent = `Ksh ${balance.toLocaleString()}`;
+    document.getElementById('wdBal').textContent = `Ksh ${balance.toLocaleString()}`;
+  }
+
+  // ── MODALS ──
+  function openModal(id) {
+    document.getElementById(id).classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  // ── TOAST ──
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  // ── NAV BAR ──
+  function navTo(el, name) {
+    event.preventDefault();
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    el.classList.add('active');
+    if (name !== 'Surveys') showToast(`Navigating to ${name}…`);
+  }
+
+  // ── INIT ──
+  checkReset();
+  updateBalanceDisplay();
+  renderSurveys();
+
+  // ── NOTIFICATION POPUP (optional, not tied to storage) ──
+  const notifQueue = [
+    { name:'Daniel K.', msg:'Withdrawal request of Ksh 19,500 has been disbursed!', time:'2 mins ago' },
+    { name:'Grace M.',  msg:'Survey reward of Ksh 250 has been credited to your account!', time:'5 mins ago' },
+    { name:'Brian O.',  msg:'Withdrawal request of Ksh 8,000 has been disbursed!', time:'12 mins ago' },
+    { name:'Faith W.',  msg:'You earned Ksh 170 from SurveysPlus!', time:'18 mins ago' },
+    { name:'James N.',  msg:'Withdrawal request of Ksh 5,500 has been disbursed!', time:'1 hr ago' },
+  ];
+  let nIdx = 0;
+
+  function showNotif() {
+    const n = notifQueue[nIdx % notifQueue.length];
+    document.getElementById('nName').textContent = n.name;
+    document.getElementById('nMsg').textContent = n.msg;
+    document.getElementById('nTime').textContent = n.time;
+    document.getElementById('notifDot').style.display = 'block';
+    document.getElementById('notifPopup').classList.add('show');
+    nIdx++;
+    setTimeout(() => document.getElementById('notifPopup').classList.remove('show'), 5500);
+  }
+
+  function toggleNotif() {
+    const p = document.getElementById('notifPopup');
+    p.classList.contains('show') ? p.classList.remove('show') : showNotif();
+  }
+
+  function dismissNotif() {
+    document.getElementById('notifPopup').classList.remove('show');
+  }
+
+  setTimeout(showNotif, 1200);
+  setInterval(showNotif, 13000);
+
+  // ── MODAL CLICK OUTSIDE CLOSE ──
+  document.querySelectorAll('.modal-overlay').forEach(o => {
+    o.addEventListener('click', e => {
+      if (e.target === o) { o.classList.remove('open'); document.body.style.overflow = ''; }
+    });
+  });
+</script>
