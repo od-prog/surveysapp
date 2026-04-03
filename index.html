@@ -100,6 +100,8 @@
   // ── RENDER SURVEY LIST WITH FILTERS ──
   function renderSurveys() {
     const list = document.getElementById('surveyList');
+    if (!list) return; // be safe
+
     const shown = filter === 'all' ? surveys : surveys.filter(s => s.tier === filter);
 
     list.innerHTML = shown.map(s => {
@@ -158,7 +160,10 @@
     if (!activeSurvey || isCompleted(id)) return;
     if (activeSurvey.tier !== 'free') { openModal('planModal'); return; }
 
-    document.getElementById('surveyBody').innerHTML = `
+    const body = document.getElementById('surveyBody');
+    if (!body) return;
+
+    body.innerHTML = `
       <div class="sm-title">${activeSurvey.title}</div>
       <div class="sm-meta">
         <span>⏱ ${activeSurvey.time}</span>
@@ -207,13 +212,18 @@
 
   // ── WITHDRAW FUNDS ──
   function openWithdraw() {
-    document.getElementById('wdBal').textContent = `Ksh ${balance.toLocaleString()}`;
+    const el = document.getElementById('wdBal');
+    if (el) el.textContent = `Ksh ${balance.toLocaleString()}`;
     openModal('withdrawModal');
   }
 
   function handleWithdraw() {
-    const amt = parseFloat(document.getElementById('wdAmt').value);
-    const mpesa = document.getElementById('wdMpesa').value.trim();
+    const amtInput = document.getElementById('wdAmt');
+    const mpesaInput = document.getElementById('wdMpesa');
+    if (!amtInput || !mpesaInput) return;
+
+    const amt = parseFloat(amtInput.value);
+    const mpesa = mpesaInput.value.trim();
 
     if (!amt || amt < 500) { showToast('⚠️ Minimum withdrawal is Ksh 500'); return; }
     if (amt > balance) { showToast('⚠️ Insufficient balance'); return; }
@@ -222,32 +232,40 @@
     balance -= amt;
     saveBalance();
 
-    document.getElementById('wdAmt').value = '';
-    document.getElementById('wdMpesa').value = '';
+    amtInput.value = '';
+    mpesaInput.value = '';
     closeModal('withdrawModal');
     showToast(`✅ Ksh ${amt.toLocaleString()} withdrawal requested!`);
   }
 
   // ── UPDATE BALANCE DISPLAY ──
   function updateBalanceDisplay() {
-    document.getElementById('mainBal').textContent = `Ksh ${balance.toLocaleString()}`;
-    document.getElementById('wdBal').textContent = `Ksh ${balance.toLocaleString()}`;
+    const el1 = document.getElementById('mainBal');
+    const el2 = document.getElementById('wdBal');
+
+    if (el1) el1.textContent = `Ksh ${balance.toLocaleString()}`;
+    if (el2) el2.textContent = `Ksh ${balance.toLocaleString()}`;
   }
 
   // ── MODALS ──
   function openModal(id) {
-    document.getElementById(id).classList.add('open');
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add('open');
     document.body.style.overflow = 'hidden';
   }
 
   function closeModal(id) {
-    document.getElementById(id).classList.remove('open');
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('open');
     document.body.style.overflow = '';
   }
 
   // ── TOAST ──
   function showToast(msg) {
     const t = document.getElementById('toast');
+    if (!t) return;
     t.textContent = msg;
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 3000);
@@ -255,7 +273,7 @@
 
   // ── NAV BAR ──
   function navTo(el, name) {
-    event.preventDefault();
+    if (event) event.preventDefault();
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
     if (name !== 'Surveys') showToast(`Navigating to ${name}…`);
@@ -278,22 +296,33 @@
 
   function showNotif() {
     const n = notifQueue[nIdx % notifQueue.length];
-    document.getElementById('nName').textContent = n.name;
-    document.getElementById('nMsg').textContent = n.msg;
-    document.getElementById('nTime').textContent = n.time;
-    document.getElementById('notifDot').style.display = 'block';
-    document.getElementById('notifPopup').classList.add('show');
+
+    const nameEl = document.getElementById('nName');
+    const msgEl = document.getElementById('nMsg');
+    const timeEl = document.getElementById('nTime');
+    const dotEl = document.getElementById('notifDot');
+    const popup = document.getElementById('notifPopup');
+    if (!nameEl || !msgEl || !timeEl || !dotEl || !popup) return;
+
+    nameEl.textContent = n.name;
+    msgEl.textContent = n.msg;
+    timeEl.textContent = n.time;
+    dotEl.style.display = 'block';
+    popup.classList.add('show');
     nIdx++;
-    setTimeout(() => document.getElementById('notifPopup').classList.remove('show'), 5500);
+    setTimeout(() => popup.classList.remove('show'), 5500);
   }
 
   function toggleNotif() {
     const p = document.getElementById('notifPopup');
+    if (!p) return;
     p.classList.contains('show') ? p.classList.remove('show') : showNotif();
   }
 
   function dismissNotif() {
-    document.getElementById('notifPopup').classList.remove('show');
+    const p = document.getElementById('notifPopup');
+    if (!p) return;
+    p.classList.remove('show');
   }
 
   setTimeout(showNotif, 1200);
@@ -302,7 +331,11 @@
   // ── MODAL CLICK OUTSIDE CLOSE ──
   document.querySelectorAll('.modal-overlay').forEach(o => {
     o.addEventListener('click', e => {
-      if (e.target === o) { o.classList.remove('open'); document.body.style.overflow = ''; }
+      if (e.target === o) {
+        const overlay = e.target;
+        overlay.classList.remove('open');
+        document.body.style.overflow = '';
+      }
     });
   });
 </script>
